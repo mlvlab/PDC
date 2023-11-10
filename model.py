@@ -1,8 +1,9 @@
 import torch
+import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 import einops
+
 import modules
 from meta_modules import HyperNetwork
 from loss import *
@@ -36,7 +37,9 @@ class SAIT(nn.Module):
         ## Template learning
         self.template_field = modules.SingleBVPNet(type=model_type,mode='mlp', hidden_features=hidden_features_T, 
                                 num_hidden_layers=num_hidden_layers_T, in_features=3, out_features=1)
+      
                 
+        # print(self)
 
     def soft_assignment(self,linear_w,B,N):
         pidxes = torch.tensor(range(self.num_part)).cuda()
@@ -50,12 +53,13 @@ class SAIT(nn.Module):
     
         return part_deformation_code
 
+
     def get_latent_code(self,instance_idx):
         embedding = self.shape_latent_code(instance_idx)
         return embedding
     
     # for generation
-    def inference(self,coords,latent_z,embedding,extractor,assign_latp='soft',sweight_cal='softmax'):
+    def inference(self,coords,latent_z,embedding,extractor,sweight_cal='softmax'):
         with torch.no_grad():
             latent_o,_ = extractor(coords,latent_z)
             B,N,_ = latent_o.shape
@@ -66,10 +70,7 @@ class SAIT(nn.Module):
             linear_w = utils.extract_weights(latent_o,sweight_cal,B)
             if B == 1:
                 linear_w = linear_w.unsqueeze(0)
-            if assign_latp == 'hard':
-                part_deformation_code = self.part_latent_basis(torch.tensor(plabels).cuda())
-            elif assign_latp == 'soft':
-                part_deformation_code = self.soft_assignment(linear_w,B,N)
+            part_deformation_code = self.soft_assignment(linear_w,B,N)
             model_in['part_deformation_code'] = part_deformation_code
             
             hypo_params = self.hyper_net(embedding)
@@ -84,7 +85,7 @@ class SAIT(nn.Module):
 
             return model_output_T['model_out']+correction
 
-    def get_template_coords(self,coords,latent_z,embedding,extractor,assign_latp='soft',sweight_cal='softmax'):
+    def get_template_coords(self,coords,latent_z,embedding,extractor,sweight_cal='softmax'):
         with torch.no_grad():
             latent_o,_ = extractor(coords,latent_z)
             B,N,_ = latent_o.shape
@@ -95,10 +96,7 @@ class SAIT(nn.Module):
             linear_w = utils.extract_weights(latent_o,sweight_cal,B)
             if B == 1:
                 linear_w = linear_w.unsqueeze(0)
-            if assign_latp == 'hard':
-                part_deformation_code = self.part_latent_basis(torch.tensor(plabels).cuda())
-            elif assign_latp == 'soft':
-                part_deformation_code = self.soft_assignment(linear_w,B,N)
+            part_deformation_code = self.soft_assignment(linear_w,B,N)
             model_in['part_deformation_code'] = part_deformation_code
             
             hypo_params = self.hyper_net(embedding)
@@ -117,7 +115,7 @@ class SAIT(nn.Module):
     # for training
     def forward(self, model_input, gt, Encoder, extractor, **kwargs):
         instance_idx = model_input['instance_idx']
-        coords = model_input['coords']  
+        coords = model_input['coords'] #.detach() # original coordinates
         B,N,_ = coords.shape
         
         ## Deformation
@@ -128,10 +126,7 @@ class SAIT(nn.Module):
         model_out_final = {'plabels': plabels,'num_part': self.num_part}
         
         linear_w = utils.extract_weights(latent_o,kwargs['sweight_cal'],B)
-        if kwargs['assign_latp'] == 'hard':
-            part_deformation_code = self.part_latent_basis(torch.tensor(plabels).cuda())
-        elif kwargs['assign_latp'] == 'soft':
-            part_deformation_code = self.soft_assignment(linear_w,B,N)
+        part_deformation_code = self.soft_assignment(linear_w,B,N)
         model_input['part_deformation_code'] = part_deformation_code
 
         embedding = self.shape_latent_code(instance_idx)
@@ -142,16 +137,19 @@ class SAIT(nn.Module):
         correction = model_output['model_out'][:,:,3].unsqueeze(-1) 
         coords_dfm = coords + deformation
 
-        x = model_output['model_in'] 
+        # calculate gradient of the deformation field (for deformation smoothness)
+        x = model_output['model_in'] # input coordinates -  p 
         grad_outputs = torch.ones_like(deformation[:,:,0])
         grad_u = torch.autograd.grad(deformation[:,:,0], [x], grad_outputs=grad_outputs, create_graph=True)[0]
         grad_v = torch.autograd.grad(deformation[:,:,1], [x], grad_outputs=grad_outputs, create_graph=True)[0]
         grad_w = torch.autograd.grad(deformation[:,:,2], [x], grad_outputs=grad_outputs, create_graph=True)[0]
         grad_deform = torch.stack([grad_u,grad_v,grad_w],dim=2)  # gradient of deformation wrt. input position
         
+        #### REGARDING parf dfm REGs ######################
         # extracting semantics of semantic deformed shapes
         latent_z_dfm = Encoder(coords_dfm[:,:kwargs['on_surface_points']])
         latent_o_dfm, _ = extractor(coords_dfm,latent_z_dfm)
+        ###############################################################################################
         
         #### Template learning ############################
         model_input_T = {'coords':coords_dfm}
@@ -175,6 +173,7 @@ class SAIT(nn.Module):
 
         return losses
  
+    # NEED TO MODIFY
     def embedding(self, embed, model_input, gt, Encoder, extractor, **kwargs):
         coords = model_input['coords'] # 3 dimensional input coordinates
         B,N,_ = coords.shape
@@ -188,10 +187,8 @@ class SAIT(nn.Module):
         linear_w = utils.extract_weights(latent_o,kwargs['sweight_cal'],B)
         if B == 1:
             linear_w = linear_w.unsqueeze(0)
-        if kwargs['assign_latp'] == 'hard':
-            part_deformation_code = self.part_latent_basis(torch.tensor(plabels).cuda())
-        elif kwargs['assign_latp'] == 'soft':
-            part_deformation_code = self.soft_assignment(linear_w,B,N)
+
+        part_deformation_code = self.soft_assignment(linear_w,B,N)
         model_input['part_deformation_code'] = part_deformation_code
         
         hypo_params = self.hyper_net(embed)
@@ -202,6 +199,7 @@ class SAIT(nn.Module):
         coords_dfm = coords + deformation
         model_input_T = {'coords':coords_dfm}
 
+        ## Geometric Template
         model_output_Tg= self.template_field(model_input_T)
         sdf = model_output_Tg['model_out'] # SDF value in template space
         sdf_final = sdf + correction # add correction
@@ -324,4 +322,178 @@ class encoder(nn.Module):
         branch, net_out = self.enc_branch(coords, z_vector)
         
         return z_vector, branch, net_out
-   
+    
+## Original DIF-Net
+class DeformedImplicitField(nn.Module):
+    def __init__(self, num_instances,latent_dim=128, model_type='sine', 
+            hyper_hidden_layers_D=3,hyper_hidden_features_D=256, 
+            hidden_features_D=256, num_hidden_layers_D=3,
+            hidden_features_T=128, num_hidden_layers_T =3,**kwargs):
+        super().__init__()
+        #　We use auto-decoder framework following Park et al. 2019 (DeepSDF),
+        # therefore, the model consists of latent codes for each subjects and DIF-Net decoder.
+
+        # latent code embedding for training subjects
+        self.latent_dim = latent_dim
+        self.latent_codes = nn.Embedding(num_instances, self.latent_dim)
+        nn.init.normal_(self.latent_codes.weight, mean=0, std=0.01)
+
+        ## DIF-Net
+        # template field
+        self.template_field = modules.SingleBVPNet(type=model_type,mode='mlp', hidden_features=hidden_features_T, 
+                            num_hidden_layers=num_hidden_layers_T, in_features=3,out_features=1)
+
+        # Deform-Net
+        self.deform_net=modules.SingleBVPNet(type=model_type,mode='mlp', hidden_features=hidden_features_D, 
+                                num_hidden_layers=num_hidden_layers_D, in_features=3,out_features=4)
+
+        # Hyper-Net
+        self.hyper_net = HyperNetwork(hyper_in_features=self.latent_dim, hyper_hidden_features=hyper_hidden_features_D,
+                        hyper_hidden_layers=hyper_hidden_layers_D, hypo_module=self.deform_net)
+        # print(self)
+
+    def get_hypo_net_weights(self, model_input):
+        instance_idx = model_input['instance_idx']
+        embedding = self.latent_codes(instance_idx)
+        hypo_params = self.hyper_net(embedding)
+        return hypo_params, embedding
+
+    def get_latent_code(self,instance_idx):
+        embedding = self.latent_codes(instance_idx)
+
+        return embedding
+
+    # for generation
+    def inference(self,coords,embedding):
+
+        with torch.no_grad():
+            model_in = {'coords': coords}
+            hypo_params = self.hyper_net(embedding)
+            model_output = self.deform_net(model_in, params=hypo_params)
+
+            deformation = model_output['model_out'][:,:,:3]
+            correction = model_output['model_out'][:,:,3:]
+            new_coords = coords + deformation
+            model_input_temp = {'coords':new_coords}
+            model_output_temp = self.template_field(model_input_temp)
+
+            return model_output_temp['model_out'] + correction
+
+    def get_template_coords(self,coords,embedding,deltas=False):
+        with torch.no_grad():
+            model_in = {'coords': coords}
+            hypo_params = self.hyper_net(embedding)
+            model_output = self.deform_net(model_in, params=hypo_params)
+            deformation = model_output['model_out'][:,:,:3]
+            new_coords = coords + deformation
+            if deltas:
+                return new_coords, model_output['model_out'][:,:,-1]
+            else:
+                return new_coords
+
+    def get_template_field(self,coords):
+        with torch.no_grad():
+            model_in = {'coords': coords}
+            model_output = self.template_field(model_in)
+
+            return model_output['model_out']
+
+    # for training
+    def forward(self, model_input,gt,**kwargs):
+
+        instance_idx = model_input['instance_idx']
+        coords = model_input['coords'] # 3 dimensional input coordinates
+
+        # get network weights for Deform-net using Hyper-net 
+        embedding = self.latent_codes(instance_idx)
+        hypo_params = self.hyper_net(embedding)
+
+        # [deformation field, correction field]
+        model_output = self.deform_net(model_input, params=hypo_params)
+
+        deformation = model_output['model_out'][:,:,:3]  # 3 dimensional deformation field
+        correction = model_output['model_out'][:,:,3:] # scalar correction field
+        new_coords = coords + deformation # deform into template space
+
+        # calculate gradient of the deformation field
+        x = model_output['model_in'] # input coordinates
+        u = deformation[:,:,0]
+        v = deformation[:,:,1]
+        w = deformation[:,:,2]
+
+        grad_outputs = torch.ones_like(u)
+        grad_u = torch.autograd.grad(u, [x], grad_outputs=grad_outputs, create_graph=True)[0]
+        grad_v = torch.autograd.grad(v, [x], grad_outputs=grad_outputs, create_graph=True)[0]
+        grad_w = torch.autograd.grad(w, [x], grad_outputs=grad_outputs, create_graph=True)[0]
+        grad_deform = torch.stack([grad_u,grad_v,grad_w],dim=2)  # gradient of deformation wrt. input position
+
+        model_input_temp = {'coords':new_coords}
+
+        model_output_temp = self.template_field(model_input_temp)
+
+        sdf = model_output_temp['model_out'] # SDF value in template space
+        grad_temp = torch.autograd.grad(sdf, [new_coords], grad_outputs=torch.ones_like(sdf), create_graph=True)[0] # normal direction in template space
+
+        sdf_final = sdf + correction # add correction
+
+        grad_sdf = torch.autograd.grad(sdf_final, [x], grad_outputs=torch.ones_like(sdf), create_graph=True)[0] # normal direction in original shape space
+        model_out = {'model_in':model_output['model_in'],'grad_temp':grad_temp,'grad_deform':grad_deform, 'model_out':sdf_final, 'latent_vec':embedding,
+                'hypo_params':hypo_params,'grad_sdf':grad_sdf,'sdf_correct':correction,
+                'coords':coords[:,:kwargs['on_surface_points']],'coords_dfm':new_coords[:,:kwargs['on_surface_points']]}
+        losses = deform_implicit_loss(model_out, gt,loss_grad_deform=kwargs['loss_grad_deform'],loss_grad_temp=kwargs['loss_grad_temp'],loss_correct=kwargs['loss_correct'])
+
+        return losses
+
+    # for evaluation
+    def embedding(self, embed, model_input,gt):
+
+        coords = model_input['coords'] # 3 dimensional input coordinates
+
+        # get network weights for Deform-net using Hyper-net 
+        hypo_params = self.hyper_net(embed)
+
+        # [deformation field, correction field]
+        model_output = self.deform_net(model_input, params=hypo_params)
+
+        deformation = model_output['model_out'][:,:,:3] # 3 dimensional deformation field
+        correction = model_output['model_out'][:,:,3:] # scalar correction field
+        new_coords = coords + deformation # deform into template space
+
+        model_input_temp = {'coords':new_coords}
+
+        model_output_temp = self.template_field(model_input_temp)
+
+        sdf = model_output_temp['model_out'] # SDF value in template space
+        sdf_final = sdf + correction # add correction
+
+        x = model_output['model_in'] # input coordinates
+        grad_sdf = torch.autograd.grad(sdf_final, [x], grad_outputs=torch.ones_like(sdf), create_graph=True)[0] # normal direction in original shape space
+
+        model_out = {'model_in':model_output['model_in'], 'model_out':sdf_final, 'latent_vec':embed, 'grad_sdf':grad_sdf}
+        losses = embedding_loss(model_out, gt)
+
+        return losses
+    
+    
+# if wmix==0:
+            #     latent_o = torch.empty(latent_o.shape).normal_(mean=0,std=2).cuda()
+            # elif wmix==1:
+            #     tmp = torch.zeros(latent_o[0].shape)
+            #     tmpidx = torch.zeros([N])
+            #     for i in range(N):
+            #         tmpidx[i] = torch.randperm(6)[0]
+            #     tmpidx = tmpidx.unsqueeze(-1)
+            #     tmp = tmp.scatter(1, tmpidx.long(), 1)
+            #     latent_o = tmp.unsqueeze(0).cuda()
+            # elif wmix==2:
+            #     tmp = torch.zeros(latent_o[0].shape)
+            #     tmp[:,3] = 1
+            #     latent_o = tmp.unsqueeze(0).cuda()
+            # elif wmix==3:
+            #     tmp = torch.zeros(latent_o[0].shape)
+            #     tmp[:,4] = 1
+            #     latent_o = tmp.unsqueeze(0).cuda()
+            # elif wmix==5:
+            #     tmp = torch.zeros(latent_o[0].shape)
+            #     tmp[:,5] = 1
+            #     latent_o = tmp.unsqueeze(0).cuda()

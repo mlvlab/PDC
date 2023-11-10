@@ -1,10 +1,16 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import open3d as o3d
 from pytorch3d.loss import chamfer_distance
 import itertools
+import torch.distributed as dist
 import utils
+import time
 
 
 l2_loss = nn.MSELoss()
@@ -12,13 +18,15 @@ l2_loss = nn.MSELoss()
 
 def SAIT_loss(model_output, gt, loss_grad_deform=1,loss_grad_temp=100,pdc_sem=10,pdc_geo=10,gdc_geo=10,
             loss_correct=1e2,gl_scale=0,gl_scale_coef=1,pair_permute='False',dist_lambda=5):
+    # GT
     gt_sdf = gt['sdf']
     gt_normals = gt['normals']
     plabels = model_output['plabels']
     num_part = model_output['num_part']
     coords_ori = model_output['info']['coords_ori']
     B, N, _ = coords_ori.shape
-    coords_dfm = model_output['info']['coords_dfm'] 
+    # Pred
+    coords_dfm = model_output['info']['coords_dfm']  # For part deformation
     latent_o_dfm = model_output['info']['latent_o_dfm']
     pred_sdf = model_output['info']['pred_sdf']
     gradient_sdf = model_output['info']['grad_sdf']
@@ -33,6 +41,7 @@ def SAIT_loss(model_output, gt, loss_grad_deform=1,loss_grad_temp=100,pdc_sem=10
         pairs = np.array_split(torch.randperm(B), 2) # B/2
 
     ### Reconstruction ###
+    # sdf regression loss from Sitzmannn et al. 2020
     sdf_constraint = torch.where(gt_sdf != -1, torch.clamp(pred_sdf,-0.5,0.5)-torch.clamp(gt_sdf,-0.5,0.5), torch.zeros_like(pred_sdf))
     inter_constraint = torch.where(gt_sdf != -1, torch.zeros_like(pred_sdf), torch.exp(-1e2 * torch.abs(pred_sdf)))
     normal_constraint = torch.where(gt_sdf == 0, 1 - F.cosine_similarity(gradient_sdf, gt_normals, dim=-1)[..., None],
@@ -77,6 +86,7 @@ def SAIT_loss(model_output, gt, loss_grad_deform=1,loss_grad_temp=100,pdc_sem=10
                 shape_dfm2 = coords_dfm[pair[1]][label_picked2].unsqueeze(0) # 1xN2x3
                 sem_dfm1 = latent_o_dfm[pair[0]][label_picked1].unsqueeze(0) # 1xN1xk
                 sem_dfm2 = latent_o_dfm[pair[1]][label_picked2].unsqueeze(0) # 1xN2xk
+                
                 # Calculating part correspondence (euclidean space + feature space)
                 xyz_dist = torch.sqrt(torch.sum((shape_dfm1.squeeze(0)[None,:,:] - shape_dfm2.squeeze(0)[:,None,:])**2, axis=-1))
                 feature_dist = torch.sqrt(torch.sum((sem_dfm1.squeeze(0)[None,:,:] - sem_dfm2.squeeze(0)[:,None,:])**2, axis=-1))
@@ -94,11 +104,13 @@ def SAIT_loss(model_output, gt, loss_grad_deform=1,loss_grad_temp=100,pdc_sem=10
                     pdc_sem_1 += l2_loss(sem_dfm1,sem_dfm2[0][corr1.view(-1)].unsqueeze(0).detach())
                     pdc_sem_2 += l2_loss(sem_dfm2,sem_dfm1[0][corr2.view(-1)].unsqueeze(0).detach())
 
+                    
     if gdc_geo != 0: 
         gdc_geo_loss = chamfer_distance(wshape_dfm1,wshape_dfm2)[0]
     else:
         gdc_geo_loss = 0.
-        
+
+
     return {'sdf': torch.abs(sdf_constraint).mean() * 3e3, 
             'inter': inter_constraint.mean() * 5e2,
             'normal_constraint': normal_constraint.mean() * 1e2,
@@ -108,8 +120,35 @@ def SAIT_loss(model_output, gt, loss_grad_deform=1,loss_grad_temp=100,pdc_sem=10
             'sdf_correct_constraint':sdf_correct_constraint.mean()* loss_correct,
             'embedding_constraint': torch.mean(model_output['info']['embedding'] ** 2).mean() * 1e6,
             'pdcode_constraint': torch.mean(model_output['info']['pdcode'] ** 2).mean() * 1e6,
-            'glo_scale': glo_s*gl_scale_coef,
             'pdc_sem': (pdc_sem_1/B+pdc_sem_2/B)*pdc_sem,
-            'gdc_geo': gdc_geo_loss*gdc_geo,
-            'pdc_geo': (pdc_geo_1/B+pdc_geo_2/B)*pdc_geo}
+            'pdc_geo': (pdc_geo_1/B+pdc_geo_2/B)*pdc_geo,
+            'gdc_geo': gdc_geo_loss*gdc_geo,'glo_scale': glo_s*gl_scale_coef
+            }
             
+            
+
+def SAIT_loss_TTO(model_output, gt):
+    # GT
+    gt_sdf = gt['sdf']
+    gt_normals = gt['normals']
+    coords_ori = model_output['info']['coords_ori']
+    B, N, _ = coords_ori.shape
+    # Pred
+    coords_dfm = model_output['info']['coords_dfm']  # For part deformation
+    pred_sdf = model_output['info']['pred_sdf']
+    gradient_sdf = model_output['info']['grad_sdf']
+    
+    ### losses regarding reconstruction ###
+    sdf_constraint = torch.where(gt_sdf != -1, torch.clamp(pred_sdf,-0.5,0.5)-torch.clamp(gt_sdf,-0.5,0.5), torch.zeros_like(pred_sdf))
+    inter_constraint = torch.where(gt_sdf != -1, torch.zeros_like(pred_sdf), torch.exp(-1e2 * torch.abs(pred_sdf)))
+    normal_constraint = torch.where(gt_sdf == 0, 1 - F.cosine_similarity(gradient_sdf, gt_normals, dim=-1)[..., None],
+                                    torch.zeros_like(gradient_sdf[..., :1]))
+    grad_constraint = torch.abs(gradient_sdf.norm(dim=-1) - 1)
+    
+    return {'sdf': torch.abs(sdf_constraint).mean() * 3e3,
+        'inter': inter_constraint.mean() * 5e2,
+        'normal_constraint': normal_constraint.mean() * 1e2,
+        'grad_constraint': grad_constraint.mean() * 5e1, 
+        'embeddings_constraint': torch.mean(model_output['info']['embedding'] ** 2).mean() * 1e6}
+
+
