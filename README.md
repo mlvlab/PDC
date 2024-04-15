@@ -45,6 +45,10 @@ pip install torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pyto
 pip install setuptools==59.5.0
 ```
 
+* Install [torchmeta](https://github.com/tristandeleu/pytorch-meta/tree/794bf82348fbdc2b68b04f5de89c38017d54ba59)
+
+Additionally, the torchmeta library is necessary. Please install it by following the instructions(Install from Source) in its GitHub page.
+
 
 ## Data preprocessing
 For data preprocessing, we follow [DIF](https://github.com/microsoft/DIF-Net/tree/be2d8be0c5190c5db6da98ef4cf8c1d401e60000) to generate SDF values/surface points/normal vectors for original meshes based on [mesh_to_sdf](https://github.com/marian42/mesh_to_sdf).
@@ -63,6 +67,7 @@ python train.py --config=configs/train/<category>.yml
 
 10.11.23. Main code release
 
+15.04.22. Refine some codes & add utils
 
 ## Acknowledgement
 This repo is based on [SIREN](https://github.com/vsitzmann/siren) and [DIF](https://github.com/microsoft/DIF-Net/tree/be2d8be0c5190c5db6da98ef4cf8c1d401e60000).
