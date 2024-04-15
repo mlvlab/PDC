@@ -41,7 +41,7 @@ pip install torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pyto
 pip install setuptools==59.5.0
 ```
 
-Additionally, the [torchmeta](https://github.com/tristandeleu/pytorch-meta/tree/794bf82348fbdc2b68b04f5de89c38017d54ba59) is necessary. Please install it by following the instructions(Readme>Install from Source) on its GitHub page.
+Additionally, the [torchmeta](https://github.com/tristandeleu/pytorch-meta/tree/794bf82348fbdc2b68b04f5de89c38017d54ba59) is necessary. Please install it by following the instructions on its GitHub page.
 
 * Install the rest of the requirements
 ```
