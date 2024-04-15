@@ -1,0 +1,29 @@
+# Training
+batch_size: 32
+num_instances: 3000
+epochs: 60
+epochs_til_checkpoint: 10
+logging_root: ./logs/car
+steps_til_summary: 100
+# Data
+expand: -1
+max_points: 200000
+on_surface_points: 4000
+point_cloud_path: ./dataset/car/surface_pts_n_normal
+train_split: split/train/car.txt
+# Model
+model_type: sine
+hidden_features_D: 256
+num_hidden_layers_D: 4
+hyper_hidden_features_D: 256
+hyper_hidden_layers_D: 2
+hidden_features_T: 128
+num_hidden_layers_T: 3
+latent_dim: 128
+part_latent_dim: 32
+pair_permute: 'False'
+sweight_cal: softmax
+# Pretrained encoder
+num_branch: 8
+pretrained_path: pretrained_model/pn/car_pointnet_branch8.pth
+
