@@ -16,10 +16,10 @@ import pdb
 
 p = configargparse.ArgumentParser()
 p.add_argument('--use_wandb', type=bool, default=False)
-p.add_argument('--project_title', type=str, default='ICCV23-Rebuttal')
-p.add_argument('--config', type=str, default='configs/train/car.yml')
-p.add_argument('--gpu', type=str, default='0')
-p.add_argument('--experiment_name', type=str, default='ablEt80_pd4000') 
+p.add_argument('--project_title', type=str, default='XXX')
+p.add_argument('--config', type=str, default='configs/train/XXX.yml')
+p.add_argument('--gpu', type=str, default='7')
+p.add_argument('--experiment_name', type=str, default='XXX') 
 
 #### tuning parameters ###################################################
 p.add_argument('--lr', type=float, default=0.0001)
@@ -43,7 +43,6 @@ p.add_argument('--load', type=str,default='None')
 opt = p.parse_args()
 if torch.cuda.is_available(): 
      os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu 
-# pdb.set_trace()
 assert torch.cuda.device_count() == 1
 
 # load configs if exist
@@ -69,7 +68,7 @@ meta_params['gl_scale_coef'] = opt.gl_scale_coef
 meta_params['load'] = opt.load
 
 # category 
-meta_params['category'] = meta_params['point_cloud_path'].split('/')[4]
+meta_params['category'] = meta_params['point_cloud_path'].split('/')[-2]
 ######################################################################
 print('Training with single gpu')
 print('Total subjects: ',meta_params['num_instances'])
@@ -91,15 +90,9 @@ else:
 sdf_dataset = dataset.PointCloudMulti(root_dir=data_path, max_num_instances=meta_params['num_instances'],**meta_params)
 dataloader = DataLoader(sdf_dataset, shuffle=True,collate_fn=sdf_dataset.collate_fn,
                     batch_size=meta_params['batch_size'], drop_last = True,num_workers = 8)
-#### dataloader length ##################
-# meta_params['pgr_max'] = len(dataloader)
-#########################################
 
 ##### define Pretrained Encoder #####
-if 'human' in meta_params['category']:
-     model1 = encoder(z_dim=256, num_branch = meta_params['num_branch'],L1_dim = 1024, L2_dim = 128)
-else:
-     model1 = encoder(z_dim=256, num_branch = meta_params['num_branch'])
+model1 = encoder(z_dim=256, num_branch = meta_params['num_branch'])
 state_dict = torch.load(meta_params['pretrained_path'])
 for key in list(state_dict.keys()):
      if 'pointnet2.' in key:
