@@ -41,7 +41,7 @@ pip install torch==1.8.1+cu111 torchvision==0.9.1+cu111 -f https://download.pyto
 pip install setuptools==59.5.0
 ```
 
-Additionally, install torchmeta (earlier version) by following the instructions provided in [DIF](https://github.com/microsoft/DIF-Net).
+Additionally, install torchmeta (I used earlier version, 1.4.0) by following the instructions provided in [DIF](https://github.com/microsoft/DIF-Net).
 Or you could install recent torchmeta (pip install torchmeta) and resolve the error as in the [link](https://github.com/DavideBuffelli/SAME/issues/1).
 
 * Install the rest of the requirements
