@@ -76,9 +76,9 @@ You can also test the jupyter notebook using the provided example datasets in `e
 
 10.11.23. Main code release
 
-15.04.22. Refine some codes & add utils
+15.04.24. Refine some codes & add utils
 
-19.04.22. Add pretrained weight for BAE-Net & evaluation codes/data
+19.04.24. Add pretrained weight for BAE-Net & evaluation codes/data
 
 ## Acknowledgement
 This repo is based on [SIREN](https://github.com/vsitzmann/siren) and [DIF](https://github.com/microsoft/DIF-Net/tree/be2d8be0c5190c5db6da98ef4cf8c1d401e60000).
