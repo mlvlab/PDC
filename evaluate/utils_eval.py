@@ -96,8 +96,6 @@ def part_label_transfer(spath, src_id, tgt_ids, category, bsize=5, k=10, tau=3):
             seg_classes = list(np.unique(gt.numpy()).astype(np.int64))
             if category == 'table':
                 seg_classes = [47,48]
-            elif category == 'lamp':
-                seg_classes = [24,25,26,27]
 
             pw_weight = pws[t]
             nearest_idx = nidx[t]
