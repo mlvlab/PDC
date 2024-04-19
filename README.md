@@ -61,6 +61,15 @@ Go DIF repo for some example SDF datasets for [ShapeNetV2](https://shapenet.org/
 python train.py --config=configs/train/<category>.yml
 ```
 
+We provide pretrained weights for BAE-Net in `pretrained_model/pn` for each category. You can then use these pretrained weights to train PDC model. For training details for BAE-Net, please refer to the supplement of our paper.
+
+
+## Evaluation
+We provide evaluation codes for keypoint transfer and part label transfer in `evaluate`.
+
+See `evaluate/evaluation.ipynb`. After the extraction of deformed coordinates, you can calculate PCK score and mIoU for keypoint transfer and part label transfer.
+You can also test the jupyter notebook using the provided example datasets in `examples/chair_kp` and `examples/chair_ptl`.
+
 
 ## UPDATES
 04.10.23. Initial code release
@@ -68,6 +77,8 @@ python train.py --config=configs/train/<category>.yml
 10.11.23. Main code release
 
 15.04.22. Refine some codes & add utils
+
+19.04.22. Add pretrained weight for BAE-Net & evaluation codes/data
 
 ## Acknowledgement
 This repo is based on [SIREN](https://github.com/vsitzmann/siren) and [DIF](https://github.com/microsoft/DIF-Net/tree/be2d8be0c5190c5db6da98ef4cf8c1d401e60000).
