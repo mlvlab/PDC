@@ -68,7 +68,9 @@ We provide pretrained weights for BAE-Net in `pretrained_model/pn` for each cate
 We provide evaluation codes for keypoint transfer and part label transfer in `evaluate`.
 
 See `evaluate/evaluation.ipynb`. After the extraction of deformed coordinates, you can calculate PCK score and mIoU for keypoint transfer and part label transfer.
-You can also test the jupyter notebook using the provided example datasets in `examples/chair_kp` and `examples/chair_ptl`.
+You can test the jupyter notebook using the provided example datasets in `examples/chair_kp` and `examples/chair_ptl`.
+
+Also, the ID list of source shapes we used for each task can be found in the `evaluate/evaluation_source_list.txt`.
 
 
 ## UPDATES
